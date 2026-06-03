@@ -75,6 +75,7 @@ import {
   UwSeasonalityArgs, uwSeasonalityHandler,
   UwNewsArgs, uwNewsHandler,
   UwTechnicalsArgs, uwTechnicalsHandler,
+  UwGexLevelsArgs, uwGexLevelsHandler,
   UwStockArgs, uwStockHandler,
   UwEarningsArgs, uwEarningsHandler,
   UwFinancialsArgs, uwFinancialsHandler,
@@ -220,6 +221,8 @@ const TOOLS = [
     inputSchema: toolInput(UwNewsArgs, []) },
   { name: "uw_technicals", description: "UnusualWhales options-positioning technicals (direct REST, replaces mcp__unusualwhales__uw_technicals). Requires ticker. command=all (default) bundles greek_exposure + spot_exposures + realized_vol; or pick one.",
     inputSchema: toolInput(UwTechnicalsArgs, ["ticker"]) },
+  { name: "uw_gex_levels", description: "Per-strike dealer gamma-exposure (GEX) walls for ANY single name (not just SPX/SPY). Fetches UW greek-exposure/strike, buckets it (~0.5% of spot for equities), and computes call wall, put wall, GEX flip, max/second magnet, max accelerator, and CC-relevant upside call walls (resistance ceilings above spot). Pass short_call_strike to get a covered-call signal (above_wall_safe / at_wall / below_wall_risk) for roll/strike selection; pass atm_iv (decimal) for a 1-day expected range. Source: ported from radon gex_scan.py, generalized to equities + CC ladder.",
+    inputSchema: toolInput(UwGexLevelsArgs, ["ticker"]) },
   { name: "uw_stock", description: "UnusualWhales stock info + live state (direct REST, replaces mcp__unusualwhales__uw_stock). Requires ticker. Returns sector/market-cap/issue-type info + close/prev-close/intraday-change.",
     inputSchema: toolInput(UwStockArgs, ["ticker"]) },
   { name: "uw_earnings", description: "UnusualWhales earnings (direct REST, replaces mcp__unusualwhales__uw_earnings + get_earnings_history). Requires ticker. Returns upcoming + historical earnings prints.",
@@ -337,6 +340,7 @@ async function main() {
         case "uw_seasonality":  result = await uwSeasonalityHandler(req.params.arguments); break;
         case "uw_news":         result = await uwNewsHandler(req.params.arguments); break;
         case "uw_technicals":   result = await uwTechnicalsHandler(req.params.arguments); break;
+        case "uw_gex_levels":   result = await uwGexLevelsHandler(req.params.arguments); break;
         case "uw_stock":        result = await uwStockHandler(req.params.arguments); break;
         case "uw_earnings":     result = await uwEarningsHandler(req.params.arguments); break;
         case "uw_financials":   result = await uwFinancialsHandler(req.params.arguments); break;

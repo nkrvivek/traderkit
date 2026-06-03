@@ -7,6 +7,7 @@
 // the UW data path per user directive: uw_client.py / traderkit ONLY.
 import { z } from "zod";
 import { TickerSchema } from "../utils/schemas.js";
+import { parseStrikeRows, computeGexAnalysis } from "../clients/gex.js";
 import {
   uwDarkpoolRecentRaw,
   uwDarkpoolTickerRaw,
@@ -26,6 +27,7 @@ import {
   uwSeasonalityMarketRaw,
   uwNewsRaw,
   uwGreekExposureRaw,
+  uwGreekExposureByStrikeRaw,
   uwSpotExposuresRaw,
   uwRealizedVolRaw,
   uwStockInfoRaw,
@@ -164,6 +166,38 @@ export async function uwTechnicalsHandler(raw: unknown): Promise<unknown> {
     uwRealizedVolRaw(a.ticker),
   ]);
   return { ticker: a.ticker, greek_exposure: greek, spot_exposures: spot, realized_vol: rvol };
+}
+
+// --- uw_gex_levels (per-strike GEX walls — computed, CC-aware) ---
+export const UwGexLevelsArgs = z.object({
+  ticker: TickerSchema,
+  spot: z.number().positive().optional(),
+  short_call_strike: z.number().positive().optional(),
+  range_pct: z.number().positive().max(0.5).default(0.1),
+  atm_iv: z.number().positive().max(5).optional(),
+});
+export async function uwGexLevelsHandler(raw: unknown): Promise<unknown> {
+  const a = UwGexLevelsArgs.parse(raw);
+  const [strikePayload, state] = await Promise.all([
+    uwGreekExposureByStrikeRaw(a.ticker),
+    a.spot === undefined ? uwStockState(a.ticker) : Promise.resolve({ price: a.spot }),
+  ]);
+  const rawRows = Array.isArray(strikePayload)
+    ? (strikePayload as Record<string, unknown>[])
+    : [];
+  if (!rawRows.length) {
+    return { ticker: a.ticker, error: "no per-strike GEX data returned from UW", levels: null, profile: [] };
+  }
+  const spot = a.spot ?? (state as { price?: number }).price;
+  if (spot === undefined) {
+    return { ticker: a.ticker, error: "could not determine spot price (pass `spot` explicitly)", levels: null, profile: [] };
+  }
+  const rows = parseStrikeRows(rawRows);
+  return computeGexAnalysis(rows, a.ticker, spot, {
+    rangePct: a.range_pct,
+    atmIv: a.atm_iv,
+    shortCallStrike: a.short_call_strike,
+  });
 }
 
 // --- uw_stock ---

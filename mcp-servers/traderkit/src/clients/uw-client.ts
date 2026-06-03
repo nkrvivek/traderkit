@@ -429,6 +429,8 @@ export const uwNewsRaw = (ticker: string | undefined, limit = 25) =>
 
 // --- technicals (options-positioning bundle) ---
 export const uwGreekExposureRaw = (ticker: string) => uwFetch("uwGreekExposure", `/stock/${T(ticker)}/greek-exposure`, {});
+// per-strike GEX grid (call_gex/put_gex/call_delta/put_delta by strike) — source for wall computation
+export const uwGreekExposureByStrikeRaw = (ticker: string) => uwFetch("uwGreekExposureByStrike", `/stock/${T(ticker)}/greek-exposure/strike`, {});
 export const uwSpotExposuresRaw = (ticker: string) => uwFetch("uwSpotExposures", `/stock/${T(ticker)}/spot-exposures`, {});
 export const uwRealizedVolRaw = (ticker: string) => uwFetch("uwRealizedVol", `/stock/${T(ticker)}/volatility/realized`, {});
 

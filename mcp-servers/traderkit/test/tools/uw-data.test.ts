@@ -23,6 +23,7 @@ vi.mock("../../src/clients/uw-client.js", () => {
     uwSeasonalityMarketRaw: tag("seasonMarket"),
     uwNewsRaw: tag("news"),
     uwGreekExposureRaw: tag("greek"),
+    uwGreekExposureByStrikeRaw: tag("greekStrike"),
     uwSpotExposuresRaw: tag("spot"),
     uwRealizedVolRaw: tag("rvol"),
     uwStockInfoRaw: tag("stockInfo"),
@@ -41,9 +42,10 @@ vi.mock("../../src/clients/uw-client.js", () => {
 import {
   uwDarkpoolHandler, uwFlowHandler, uwInsiderHandler, uwCongressHandler,
   uwShortsHandler, uwInstitutionsHandler, uwSeasonalityHandler, uwNewsHandler,
-  uwTechnicalsHandler, uwStockHandler, uwEarningsHandler, uwFinancialsHandler,
-  uwAlertsHandler, uwEtfHandler,
+  uwTechnicalsHandler, uwGexLevelsHandler, uwStockHandler, uwEarningsHandler,
+  uwFinancialsHandler, uwAlertsHandler, uwEtfHandler,
 } from "../../src/tools/uw-data.js";
+import { uwGreekExposureByStrikeRaw } from "../../src/clients/uw-client.js";
 
 const fnOf = (r: unknown) => (r as { _fn: string })._fn;
 
@@ -103,6 +105,26 @@ describe("uw-data command routing", () => {
     const one = await uwTechnicalsHandler({ ticker: "AAPL", command: "realized_vol" }) as any;
     expect(fnOf(one.realized_vol)).toBe("rvol");
     expect(one.greek_exposure).toBeUndefined();
+  });
+
+  it("uw_gex_levels: computes walls + cc_signal from per-strike data (spot passed)", async () => {
+    (uwGreekExposureByStrikeRaw as any).mockResolvedValueOnce([
+      { strike: 95, call_gex: 1000, put_gex: -5000, call_delta: 0, put_delta: 0 },
+      { strike: 100, call_gex: 2000, put_gex: -1000, call_delta: 0, put_delta: 0 },
+      { strike: 105, call_gex: 9000, put_gex: -500, call_delta: 0, put_delta: 0 },
+    ]);
+    const r = await uwGexLevelsHandler({ ticker: "TEST", spot: 100, short_call_strike: 105 }) as any;
+    expect(r.levels.call_wall.strike).toBe(105);
+    expect(r.levels.put_wall.strike).toBe(95);
+    expect(r.cc_signal.vs_wall).toBe("at_wall");
+    expect(r.upside_call_walls[0].strike).toBe(105);
+  });
+
+  it("uw_gex_levels: empty per-strike data returns error envelope", async () => {
+    (uwGreekExposureByStrikeRaw as any).mockResolvedValueOnce({ error: "boom", data: [] });
+    const r = await uwGexLevelsHandler({ ticker: "TEST", spot: 100 }) as any;
+    expect(r.error).toMatch(/no per-strike/);
+    expect(r.levels).toBeNull();
   });
 
   it("uw_stock: info + state", async () => {
