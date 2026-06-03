@@ -43,6 +43,7 @@ Each phase file (`trade/phases/0X-*.md`) is independently readable. Edit in plac
 - `snaptrade-trade-mcp` (execution, interactive mode only)
 
 Optional:
-- `tradestation-mcp` (if you use TradeStation)
 - `exa` (qualitative catalysts in Phase 3)
 - `memory` (persistent trade journal in Phase 5)
+
+TradeStation: native `ts_*` tools are bundled in traderkit (no separate MCP needed).

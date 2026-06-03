@@ -38,6 +38,9 @@ export const CheckTradeArgs = z.object({
   discretionary_event: z.boolean().optional(),
   discretionary_rationale: z.string().optional(),
   active_theses: z.array(ActiveThesis).optional(),
+  proposed_structure: z.string().optional(),
+  thesis_md_path: z.string().optional(),
+  thesis_md_sha256: z.string().optional(),
 });
 
 export interface CheckTradeDeps {
@@ -88,5 +91,8 @@ export async function checkTradeHandler(
     discretionary_event: args.discretionary_event,
     discretionary_rationale: args.discretionary_rationale,
     active_theses: args.active_theses,
+    proposed_structure: args.proposed_structure,
+    thesis_md_path: args.thesis_md_path,
+    thesis_md_sha256: args.thesis_md_sha256,
   });
 }

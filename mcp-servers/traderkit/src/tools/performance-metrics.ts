@@ -74,14 +74,6 @@ function winRate(returns: readonly number[]): { rate: number; avg_win: number; a
   };
 }
 
-function turnover(weights_before: readonly number[], weights_after: readonly number[]): number {
-  let sum = 0;
-  for (let i = 0; i < weights_before.length; i++) {
-    sum += Math.abs((weights_after[i] ?? 0) - (weights_before[i] ?? 0));
-  }
-  return sum / 2;
-}
-
 export async function performanceMetricsHandler(raw: unknown) {
   const args = PerformanceMetricsArgs.parse(raw);
   const { returns, risk_free_rate, periods_per_year, min_observations } = args;
@@ -122,5 +114,3 @@ function round(n: number): number {
 function maybeRound(n: number | null): number | null {
   return n === null ? null : round(n);
 }
-
-export { turnover };

@@ -5,6 +5,7 @@ import { checkWashSale } from "./wash-sale.js";
 import { checkExpiryDayWindow } from "./expiry-day-window.js";
 import { checkStrikeGrid, type StrikeGridEntry } from "./strike-grid.js";
 import { checkThesisRequired, type ActiveThesis } from "./thesis-required.js";
+import { checkThesisStructure } from "./thesis-structure.js";
 import { checkFreshness } from "./freshness.js";
 import { THIRTY_DAYS_MS } from "../utils/date.js";
 import { toMessage } from "../utils/errors.js";
@@ -32,6 +33,9 @@ export interface ComposeInput {
   discretionary_event?: boolean | undefined;
   discretionary_rationale?: string | undefined;
   active_theses?: ActiveThesis[] | undefined;
+  proposed_structure?: string | undefined;
+  thesis_md_path?: string | undefined;
+  thesis_md_sha256?: string | undefined;
 }
 
 export interface ComposeResult extends GateResult {
@@ -110,6 +114,17 @@ export async function composeCheckTrade(input: ComposeInput): Promise<ComposeRes
   });
   reasons.push(...r7.reasons);
   warnings.push(...r7.warnings);
+
+  const r17 = checkThesisStructure({
+    profile: input.profile,
+    ticker: input.trade.ticker,
+    proposed_structure: input.proposed_structure,
+    thesis_md_path: input.thesis_md_path,
+    thesis_md_sha256: input.thesis_md_sha256,
+    discretionary_event: input.discretionary_event,
+  });
+  reasons.push(...r17.reasons);
+  warnings.push(...r17.warnings);
 
   const since = new Date(now.getTime() - THIRTY_DAYS_MS);
   const poolAccounts = input.allProfiles

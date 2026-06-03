@@ -230,7 +230,7 @@ Works with any broker connected via [SnapTrade](https://snaptrade.com/):
 - IBKR (read + write)
 - Schwab (read + write)
 - Robinhood (read-only)
-- TradeStation (via separate [TradeStation MCP](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/tradestation_mcp))
+- TradeStation (via traderkit native `ts_*` tools — `ts_balances`, `ts_positions`, `ts_quotes`, `ts_orders`, `ts_place_order`)
 - Ally, Morgan Stanley — manual execution only
 
 ## Disclaimer

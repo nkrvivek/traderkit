@@ -63,7 +63,7 @@ system: |-
 
   Supported brokers.
   Via SnapTrade read+write -- Fidelity, E-Trade, IBKR, Schwab. Robinhood read-only.
-  Via TradeStation MCP -- TradeStation.
+  Via traderkit native ts_* tools -- TradeStation.
   Manual execution -- Ally, Morgan Stanley.
 
 tools:

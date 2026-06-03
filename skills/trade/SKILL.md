@@ -20,7 +20,7 @@ description: Portfolio refresh + trade proposal + risk gate pipeline powered by 
 
 ```
 Phase 1: BOOT       profile load + regime gate
-Phase 2: REFRESH    broker data (SnapTrade/TS MCP) + risk read + held-position flow scan
+Phase 2: REFRESH    broker data (SnapTrade + traderkit ts_* tools) + risk read + held-position flow scan
 Phase 3: DISCOVER   FMP earnings + SEC activists + 13F smart-money + UW darkpool/options-flow (radon port)
 Phase 4: PROPOSE    traderkit tools assemble + size + flow-confluence tag + check
 Phase 5: PERSIST    session doc write (vault optional)
@@ -43,8 +43,9 @@ Phase 5: PERSIST    session doc write (vault optional)
 - **snaptrade-trade-mcp** — broker execution (optional, only for `--mode interactive`)
 
 Optional:
-- **tradestation-mcp** — TS-specific chains + orders
 - **exa** — qualitative catalysts (Phase 3)
+
+TradeStation: native `ts_*` tools are bundled in traderkit (no separate MCP needed).
 
 ## Required env vars
 

@@ -20,11 +20,11 @@ Capture:
 
 ## Optional — TradeStation (if configured)
 
-Only if profile `broker: tradestation` OR user has TS MCP enabled:
+Only if profile `broker: tradestation`. Use traderkit native `ts_*` tools (no external MCP needed):
 
 ```
-get-balances-summary()
-get-positions-details(accounts="<ts-account-id>")
+mcp__traderkit__ts_balances(account_id="<ts-account-id>")
+mcp__traderkit__ts_positions(account_id="<ts-account-id>")
 ```
 
 Merge into unified positions list.

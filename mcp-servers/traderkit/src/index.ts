@@ -62,11 +62,25 @@ import { SynthesizeDebateArgs, synthesizeDebateHandler } from "./tools/synthesiz
 import { RiskDebate3StanceArgs, riskDebate3StanceHandler } from "./tools/risk-debate-3stance.js";
 import { ReflectTradesArgs, reflectTradesHandler } from "./tools/reflect-trades.js";
 import { LlmCouncilArgs, llmCouncilHandler } from "./tools/llm-council.js";
-import { TsBalancesArgs, tsBalancesHandler } from "./tools/ts-balances.js";
-import { TsPositionsArgs, tsPositionsHandler } from "./tools/ts-positions.js";
-import { TsQuotesArgs, tsQuotesHandler } from "./tools/ts-quotes.js";
-import { TsOrdersArgs, tsOrdersHandler } from "./tools/ts-orders.js";
-import { TsPlaceOrderArgs, tsPlaceOrderHandler } from "./tools/ts-place-order.js";
+import { FredSeriesArgs, fredSeriesHandler } from "./tools/fred-series.js";
+import { AvQuoteArgs, avQuoteHandler } from "./tools/av-quote.js";
+import { CheckAiBottLayerArgs, checkAiBottLayerHandler } from "./tools/check-ai-bott-layer.js";
+import {
+  UwDarkpoolArgs, uwDarkpoolHandler,
+  UwFlowArgs, uwFlowHandler,
+  UwInsiderArgs, uwInsiderHandler,
+  UwCongressArgs, uwCongressHandler,
+  UwShortsArgs, uwShortsHandler,
+  UwInstitutionsArgs, uwInstitutionsHandler,
+  UwSeasonalityArgs, uwSeasonalityHandler,
+  UwNewsArgs, uwNewsHandler,
+  UwTechnicalsArgs, uwTechnicalsHandler,
+  UwStockArgs, uwStockHandler,
+  UwEarningsArgs, uwEarningsHandler,
+  UwFinancialsArgs, uwFinancialsHandler,
+  UwAlertsArgs, uwAlertsHandler,
+  UwEtfArgs, uwEtfHandler,
+} from "./tools/uw-data.js";
 import { redact } from "./redact.js";
 
 function toolInput<S extends ZodRawShape>(
@@ -104,6 +118,8 @@ const TOOLS = [
     inputSchema: toolInput(ScanTlhArgs, ["tax_entity", "positions"]) },
   { name: "check_concentration", description: "Analyze portfolio concentration vs profile caps. Returns per-position labels (HEADROOM/NEAR-CAP/AT-CAP/OVER-CAP) and HHI.",
     inputSchema: toolInput(CheckConcentrationArgs, ["profile", "positions", "portfolio_total_usd"]) },
+  { name: "check_ai_bott_layer", description: "Analyze portfolio exposure across AI-Bottlenecks physical chokepoint layers (I-XV). Source: vault watchlist wiki/trading/watchlists/ai-bottlenecks.md (114 tickers across 15 layers). Default cap 4% NAV per layer. Returns per-layer HEADROOM/NEAR-CAP/AT-CAP/OVER-CAP labels — catches cross-name macro-driver concentration that single-name check_concentration misses (e.g. INTC+AMD+NVDA all under Layer V).",
+    inputSchema: toolInput(CheckAiBottLayerArgs, ["positions", "portfolio_total_usd"]) },
   { name: "regime_gate", description: "Check if a trade is allowed under the current market regime. Returns adjusted sizing, blocked actions, and preferred structures.",
     inputSchema: toolInput(RegimeGateArgs, ["regime_tier", "direction", "notional_usd"]) },
   { name: "propose_trade", description: "Assemble a sized trade proposal with concentration headroom, regime adjustment, and cap check.",
@@ -180,25 +196,48 @@ const TOOLS = [
     inputSchema: toolInput(RiskDebate3StanceArgs, ["proposal"]) },
   { name: "reflect_trades", description: "Reflection harness over closed trades. Aggregates win-rate, P&L, R-rule breaches w/ counts + examples, revenge-roll patterns (≥2 rolls then LOSS), pattern-drift alerts (degrading win-rate, ticker concentration in losses, structure repeatedly losing, HALT-regime bypasses). Emits structured lessons[] w/ category + severity + evidence. Deterministic — caller passes closed-trades array (from session_write JSONs or vault journal). Ported from TauricResearch/TradingAgents graph/reflection.py + memory.py.",
     inputSchema: toolInput(ReflectTradesArgs, []) },
-  { name: "ts_balances", description: "TradeStation account balances (cash, buying power, equity, P&L). Local OAuth — refresh token persisted at ~/.config/traderkit/tradestation.json, auto-refreshes on every call (no claude.ai connector dependency).",
-    inputSchema: toolInput(TsBalancesArgs, ["account_ids"]) },
-  { name: "ts_positions", description: "TradeStation positions (symbol, qty, avg price, market value, unrealized P&L) for one or more accounts. Local OAuth, auto-refresh.",
-    inputSchema: toolInput(TsPositionsArgs, ["account_ids"]) },
-  { name: "ts_quotes", description: "TradeStation real-time quotes (last/bid/ask/volume/prev close) for up to 50 symbols (equities + options). Local OAuth, auto-refresh.",
-    inputSchema: toolInput(TsQuotesArgs, ["symbols"]) },
-  { name: "ts_orders", description: "TradeStation open orders for one or more accounts (status, qty, filled, limit/stop, trade action, duration). Local OAuth, auto-refresh.",
-    inputSchema: toolInput(TsOrdersArgs, ["account_ids"]) },
-  { name: "ts_place_order", description: "Place a TradeStation order. Default preview_only=true returns confirmation only. To place live, set preview_only=false AND confirm_token='PLACE-LIVE-ORDER' (R6 human-gate). Supports Market/Limit/StopMarket/StopLimit + DAY/GTC/etc.",
-    inputSchema: toolInput(TsPlaceOrderArgs, ["account_id", "symbol", "quantity", "order_type", "trade_action"]) },
+  { name: "fred_series", description: "FRED (St. Louis Fed) latest-observation lookup for one or more macro series (e.g. VIXCLS, T10Y2Y, DFF, UNRATE, CPIAUCSL, DGS10). Returns {series_id: {date, value}} or {error} per series. Free tier, key required (FRED_API_KEY).",
+    inputSchema: toolInput(FredSeriesArgs, ["series_ids"]) },
+  { name: "av_quote", description: "Alpha Vantage GLOBAL_QUOTE for one ticker OR macro series (REAL_GDP, TREASURY_YIELD, FEDERAL_FUNDS_RATE, CPI, INFLATION, UNEMPLOYMENT, NONFARM_PAYROLL, RETAIL_SALES, DURABLES, REAL_GDP_PER_CAPITA). Free tier 25/day, 5/min — use as FMP/Finnhub fallback. Key required (ALPHA_VANTAGE_API_KEY).",
+    inputSchema: toolInput(AvQuoteArgs, []) },
   { name: "llm_council", description: "LLM Trading Council — model-diverse 3-stage debate (Karpathy llm-council pattern + Tensor-Trade Skeptic + DisagreementPoint extensions). Stage 1: 6 seats (Anthropic + OpenAI + Google mix, w/ permanent Skeptic) opine on candidate via structured envelope (thesis/supporting_points/risks/verdict/confidence). Stage 2: anonymized cross-rank by analytical quality. Stage 3: Gemini chair synthesizes final structured JSON (verdict/conviction/pros/cons/recommendation/sizing_note/disagreement_points/model_rankings) w/ consensus-threshold gating (DEFER if <N voices align). Eligibility gate: skips under HALT regime, skips rolls (R1-R9 deterministic gates suffice), TIER-1 only (signal_rank≥40). Requires ANTHROPIC_API_KEY + OPENAI_API_KEY + GEMINI_API_KEY. Cost ~$0.75-3/proposal. Direct provider routing — no OpenRouter dependency. Feeds Phase 4 research-manager T2 alongside bull/bear T1.",
     inputSchema: toolInput(LlmCouncilArgs, ["candidate"]) },
+  { name: "uw_darkpool", description: "UnusualWhales darkpool prints (direct REST, replaces mcp__unusualwhales__uw_darkpool). command=ticker (default, requires ticker) → block prints for one name; command=recent → market-wide recent prints. Filter via limit.",
+    inputSchema: toolInput(UwDarkpoolArgs, []) },
+  { name: "uw_flow", description: "UnusualWhales options flow alerts (direct REST, replaces mcp__unusualwhales__uw_flow). command=flow_alerts (default, market-wide smart-money premium) or command=ticker (per-name flow). Filter via limit.",
+    inputSchema: toolInput(UwFlowArgs, []) },
+  { name: "uw_insider", description: "UnusualWhales insider trading (direct REST, replaces mcp__unusualwhales__uw_insider). command=transactions (default; optional ticker filter) → recent insider buys/sells; command=buy_sells (requires ticker) → aggregated buy/sell summary for a name.",
+    inputSchema: toolInput(UwInsiderArgs, []) },
+  { name: "uw_congress", description: "UnusualWhales congressional trading (direct REST, replaces mcp__unusualwhales__uw_congress + uw_politicians). command=recent_trades (default) or command=late_reports.",
+    inputSchema: toolInput(UwCongressArgs, []) },
+  { name: "uw_shorts", description: "UnusualWhales short interest (direct REST, replaces mcp__unusualwhales__uw_shorts). command=data (default; SI/days-to-cover), interest_float, or volume_ratio. Requires ticker.",
+    inputSchema: toolInput(UwShortsArgs, ["ticker"]) },
+  { name: "uw_institutions", description: "UnusualWhales institutional ownership (direct REST, replaces mcp__unusualwhales__uw_institutions). command=list (default; top institutions) or command=ownership (requires name → that fund's holdings). For ticker-level 13F use traderkit inst_holdings.",
+    inputSchema: toolInput(UwInstitutionsArgs, []) },
+  { name: "uw_seasonality", description: "UnusualWhales seasonality (direct REST, replaces mcp__unusualwhales__uw_seasonality). command=monthly (default, requires ticker), year_month (requires ticker), or market.",
+    inputSchema: toolInput(UwSeasonalityArgs, []) },
+  { name: "uw_news", description: "UnusualWhales news headlines (direct REST, replaces mcp__unusualwhales__uw_news). Optional ticker filter (omit for market-wide). Filter via limit.",
+    inputSchema: toolInput(UwNewsArgs, []) },
+  { name: "uw_technicals", description: "UnusualWhales options-positioning technicals (direct REST, replaces mcp__unusualwhales__uw_technicals). Requires ticker. command=all (default) bundles greek_exposure + spot_exposures + realized_vol; or pick one.",
+    inputSchema: toolInput(UwTechnicalsArgs, ["ticker"]) },
+  { name: "uw_stock", description: "UnusualWhales stock info + live state (direct REST, replaces mcp__unusualwhales__uw_stock). Requires ticker. Returns sector/market-cap/issue-type info + close/prev-close/intraday-change.",
+    inputSchema: toolInput(UwStockArgs, ["ticker"]) },
+  { name: "uw_earnings", description: "UnusualWhales earnings (direct REST, replaces mcp__unusualwhales__uw_earnings + get_earnings_history). Requires ticker. Returns upcoming + historical earnings prints.",
+    inputSchema: toolInput(UwEarningsArgs, ["ticker"]) },
+  { name: "uw_financials", description: "UnusualWhales financial statements (direct REST, replaces mcp__unusualwhales__get_balance_sheets/get_cash_flows/get_income_statements). Requires ticker. statement=all (default) | balance_sheet | cash_flow | income. limit = number of periods.",
+    inputSchema: toolInput(UwFinancialsArgs, ["ticker"]) },
+  { name: "uw_alerts", description: "UnusualWhales triggered alerts (direct REST, replaces mcp__unusualwhales__uw_alerts). Returns recently triggered alerts from configured rules. Filter via limit.",
+    inputSchema: toolInput(UwAlertsArgs, []) },
+  { name: "uw_etf", description: "UnusualWhales ETF data (direct REST, replaces mcp__unusualwhales__uw_etf). Requires ticker. command=info (default; name/aum/expense-ratio — also the ETF-vs-equity classification probe), holdings, exposure, or all. A 200 with ETF fields ⇒ ticker is an ETF.",
+    inputSchema: toolInput(UwEtfArgs, ["ticker"]) },
 ];
 
 const SECRETS = [
   process.env.SNAPTRADE_CONSUMER_KEY, process.env.SNAPTRADE_USER_SECRET,
   process.env.SNAPTRADE_USER_ID, process.env.SNAPTRADE_CLIENT_ID,
   process.env.UW_TOKEN, process.env.FINNHUB_API_KEY,
-  process.env.FMP_API_KEY,
+  process.env.FMP_API_KEY, process.env.FRED_API_KEY,
+  process.env.ALPHA_VANTAGE_API_KEY,
 ].filter((x): x is string => !!x);
 
 const SNAPTRADE_READ_ALLOWED_ENV = [
@@ -247,6 +286,7 @@ async function main() {
         case "set_profile":     result = await setProfileHandler(req.params.arguments, deps); break;
         case "scan_tlh":        result = await scanTlhHandler(req.params.arguments, deps); break;
         case "check_concentration": result = await checkConcentrationHandler(req.params.arguments, deps); break;
+        case "check_ai_bott_layer": result = await checkAiBottLayerHandler(req.params.arguments); break;
         case "regime_gate":     result = await regimeGateHandler(req.params.arguments); break;
         case "propose_trade":  result = await proposeTradeHandler(req.params.arguments, deps); break;
         case "track_tax":      result = await trackTaxHandler(req.params.arguments); break;
@@ -285,12 +325,23 @@ async function main() {
         case "synthesize_debate":         result = await synthesizeDebateHandler(req.params.arguments); break;
         case "risk_debate_3stance":       result = await riskDebate3StanceHandler(req.params.arguments); break;
         case "reflect_trades":            result = await reflectTradesHandler(req.params.arguments); break;
-        case "ts_balances":     result = await tsBalancesHandler(req.params.arguments); break;
-        case "ts_positions":    result = await tsPositionsHandler(req.params.arguments); break;
-        case "ts_quotes":       result = await tsQuotesHandler(req.params.arguments); break;
-        case "ts_orders":       result = await tsOrdersHandler(req.params.arguments); break;
-        case "ts_place_order":  result = await tsPlaceOrderHandler(req.params.arguments); break;
+        case "fred_series":     result = await fredSeriesHandler(req.params.arguments); break;
+        case "av_quote":        result = await avQuoteHandler(req.params.arguments); break;
         case "llm_council":     result = await llmCouncilHandler(req.params.arguments); break;
+        case "uw_darkpool":     result = await uwDarkpoolHandler(req.params.arguments); break;
+        case "uw_flow":         result = await uwFlowHandler(req.params.arguments); break;
+        case "uw_insider":      result = await uwInsiderHandler(req.params.arguments); break;
+        case "uw_congress":     result = await uwCongressHandler(req.params.arguments); break;
+        case "uw_shorts":       result = await uwShortsHandler(req.params.arguments); break;
+        case "uw_institutions": result = await uwInstitutionsHandler(req.params.arguments); break;
+        case "uw_seasonality":  result = await uwSeasonalityHandler(req.params.arguments); break;
+        case "uw_news":         result = await uwNewsHandler(req.params.arguments); break;
+        case "uw_technicals":   result = await uwTechnicalsHandler(req.params.arguments); break;
+        case "uw_stock":        result = await uwStockHandler(req.params.arguments); break;
+        case "uw_earnings":     result = await uwEarningsHandler(req.params.arguments); break;
+        case "uw_financials":   result = await uwFinancialsHandler(req.params.arguments); break;
+        case "uw_alerts":       result = await uwAlertsHandler(req.params.arguments); break;
+        case "uw_etf":          result = await uwEtfHandler(req.params.arguments); break;
         default: throw new Error(`unknown tool: ${req.params.name}`);
       }
       const safe = redact(result, SECRETS);

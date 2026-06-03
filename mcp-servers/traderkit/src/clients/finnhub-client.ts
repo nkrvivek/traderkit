@@ -13,13 +13,6 @@ export interface FinnhubProfile {
   ipo_date?: string | undefined;
 }
 
-export interface FinnhubEarnings {
-  ticker: string;
-  next_earnings_date?: string | undefined;
-  previous_earnings_date?: string | undefined;
-  timing?: "bmo" | "amc" | "unknown" | undefined;
-}
-
 function sanitizeBody(body: string, token: string): string {
   const stripped = token ? body.split(token).join("[redacted]") : body;
   return stripped.slice(0, 200);
@@ -75,38 +68,3 @@ export async function finnhubProfile(ticker: string): Promise<FinnhubProfile> {
   }
 }
 
-function parseTiming(raw: unknown): "bmo" | "amc" | "unknown" {
-  const h = String(raw ?? "").toLowerCase();
-  if (h === "bmo" || h === "before market open") return "bmo";
-  if (h === "amc" || h === "after market close") return "amc";
-  return "unknown";
-}
-
-export async function finnhubEarnings(ticker: string, fromIso?: string, toIso?: string): Promise<FinnhubEarnings> {
-  const T = ticker.toUpperCase();
-  const today = new Date();
-  const from = fromIso ?? new Date(today.getTime() - 90 * 86_400_000).toISOString().slice(0, 10);
-  const to = toIso ?? new Date(today.getTime() + 90 * 86_400_000).toISOString().slice(0, 10);
-  try {
-    const j = asRecord(await fhGet("/calendar/earnings", { from, to, symbol: T }));
-    const rows: Record<string, unknown>[] = Array.isArray(j.earningsCalendar)
-      ? (j.earningsCalendar as Record<string, unknown>[])
-      : [];
-    const nowIso = today.toISOString().slice(0, 10);
-    const upcoming = rows
-      .filter((r) => String(r.date) >= nowIso)
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)))[0];
-    const past = rows
-      .filter((r) => String(r.date) < nowIso)
-      .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
-    return {
-      ticker: T,
-      next_earnings_date: asString(upcoming?.date),
-      previous_earnings_date: asString(past?.date),
-      timing: parseTiming(upcoming?.hour),
-    };
-  } catch (e) {
-    process.stderr.write(`traderkit: finnhubEarnings(${T}) failed: ${toMessage(e)}\n`);
-    return { ticker: T };
-  }
-}

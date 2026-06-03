@@ -3,6 +3,7 @@ import type { Profile } from "../profiles/schema.js";
 import { concentrationLabel } from "../utils/concentration.js";
 import { round } from "../utils/math.js";
 import { comboFillabilityHandler } from "./combo-fillability.js";
+import { getLayerForTicker } from "./check-ai-bott-layer.js";
 
 const RollLegSchema = z.object({
   action: z.enum(["BUY", "SELL"]),
@@ -142,6 +143,14 @@ export async function proposeTradeHandler(
     warnings.push(`structure=${args.structure} but no roll_context provided — fillability gate skipped (R14 risk unchecked)`);
   }
 
+  const aiBottLayer = getLayerForTicker(args.ticker);
+  if (aiBottLayer) {
+    warnings.push(
+      `[AI-BOTT] ${args.ticker} → Layer ${aiBottLayer.layer_roman} (${aiBottLayer.layer_name}) — ` +
+      `call check_ai_bott_layer w/ full positions for cap check (default 4% NAV/layer)`,
+    );
+  }
+
   return {
     status: "CANDIDATE",
     ticker: args.ticker,
@@ -170,6 +179,7 @@ export async function proposeTradeHandler(
     cap_check: adjustedSizeUsd <= profile.caps.max_order_notional ? "PASS" : "CAPPED",
     fillability: fillability ?? null,
     suggested_structure: fillability?.score === "LOW" ? "leg_out" : (args.structure ?? "equity"),
+    ai_bott_layer: aiBottLayer,
     warnings,
   };
 }

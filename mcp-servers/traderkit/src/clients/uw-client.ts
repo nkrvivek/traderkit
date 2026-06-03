@@ -365,3 +365,88 @@ export async function uwStockState(ticker: string): Promise<{ price?: number | u
     return {};
   }
 }
+
+// =============================================================================
+// UW passthrough fetchers — replace the (removed) mcp__unusualwhales__* MCP.
+// All paths LIVE-VERIFIED against api.unusualwhales.com 2026-06-03 (HTTP 200).
+// Ported from trade-refresh src/uw_client.py, path-corrected where the Python
+// had stale 404 paths (shorts/seasonality/news/technicals/institutions/alerts).
+// Each returns the response `.data` payload (array or object) for agent reading.
+// =============================================================================
+
+/** Return the UW envelope's `.data` field (array or object), else the raw json. */
+function uwPayload(json: unknown): unknown {
+  const rec = asRecord(json);
+  return "data" in rec ? rec.data : json;
+}
+
+/** Thin GET → `.data`, with structured failure (never throws to the tool layer). */
+async function uwFetch(label: string, path: string, params: Record<string, string | number | undefined> = {}): Promise<unknown> {
+  try {
+    return uwPayload(await uwGet(path, params));
+  } catch (e) {
+    process.stderr.write(`traderkit: ${label} failed: ${toMessage(e)}\n`);
+    return { error: toMessage(e), data: [] };
+  }
+}
+
+const T = (t: string) => t.toUpperCase();
+
+// --- darkpool ---
+export const uwDarkpoolRecentRaw = (limit = 100) => uwFetch("uwDarkpoolRecent", `/darkpool/recent`, { limit });
+export const uwDarkpoolTickerRaw = (ticker: string, limit = 500) => uwFetch("uwDarkpoolTicker", `/darkpool/${T(ticker)}`, { limit });
+
+// --- flow ---
+export const uwFlowMarketRaw = (limit = 50) => uwFetch("uwFlowMarket", `/option-trades/flow-alerts`, { limit });
+export const uwFlowTickerRaw = (ticker: string, limit = 50) => uwFetch("uwFlowTicker", `/stock/${T(ticker)}/flow-alerts`, { limit });
+
+// --- insider ---
+export const uwInsiderTransactionsRaw = (ticker: string | undefined, limit = 50) =>
+  uwFetch("uwInsiderTransactions", `/insider/transactions`, ticker ? { ticker_symbol: T(ticker), limit } : { limit });
+export const uwInsiderBuySellsRaw = (ticker: string) => uwFetch("uwInsiderBuySells", `/stock/${T(ticker)}/insider-buy-sells`, {});
+
+// --- congress ---
+export const uwCongressRecentRaw = (limit = 50) => uwFetch("uwCongressRecent", `/congress/recent-trades`, { limit });
+export const uwCongressLateRaw = (limit = 50) => uwFetch("uwCongressLate", `/congress/late-reports`, { limit });
+
+// --- shorts ---
+export const uwShortsDataRaw = (ticker: string) => uwFetch("uwShortsData", `/shorts/${T(ticker)}/data`, {});
+export const uwShortsInterestFloatRaw = (ticker: string) => uwFetch("uwShortsInterestFloat", `/shorts/${T(ticker)}/interest-float`, {});
+export const uwShortsVolumeRatioRaw = (ticker: string) => uwFetch("uwShortsVolumeRatio", `/shorts/${T(ticker)}/volume-and-ratio`, {});
+
+// --- institutions ---
+export const uwInstitutionsListRaw = (limit = 50) => uwFetch("uwInstitutionsList", `/institutions`, { limit });
+export const uwInstitutionOwnershipRaw = (name: string) => uwFetch("uwInstitutionOwnership", `/institution/${encodeURIComponent(name)}/ownership`, {});
+
+// --- seasonality ---
+export const uwSeasonalityMonthlyRaw = (ticker: string) => uwFetch("uwSeasonalityMonthly", `/seasonality/${T(ticker)}/monthly`, {});
+export const uwSeasonalityYearMonthRaw = (ticker: string) => uwFetch("uwSeasonalityYearMonth", `/seasonality/${T(ticker)}/year-month`, {});
+export const uwSeasonalityMarketRaw = () => uwFetch("uwSeasonalityMarket", `/seasonality/market`, {});
+
+// --- news ---
+export const uwNewsRaw = (ticker: string | undefined, limit = 25) =>
+  uwFetch("uwNews", `/news/headlines`, ticker ? { ticker: T(ticker), limit } : { limit });
+
+// --- technicals (options-positioning bundle) ---
+export const uwGreekExposureRaw = (ticker: string) => uwFetch("uwGreekExposure", `/stock/${T(ticker)}/greek-exposure`, {});
+export const uwSpotExposuresRaw = (ticker: string) => uwFetch("uwSpotExposures", `/stock/${T(ticker)}/spot-exposures`, {});
+export const uwRealizedVolRaw = (ticker: string) => uwFetch("uwRealizedVol", `/stock/${T(ticker)}/volatility/realized`, {});
+
+// --- stock info ---
+export const uwStockInfoRaw = (ticker: string) => uwFetch("uwStockInfo", `/stock/${T(ticker)}/info`, {});
+
+// --- earnings ---
+export const uwEarningsRaw = (ticker: string) => uwFetch("uwEarnings", `/stock/${T(ticker)}/earnings`, {});
+
+// --- financials ---
+export const uwBalanceSheetsRaw = (ticker: string, limit = 4) => uwFetch("uwBalanceSheets", `/stock/${T(ticker)}/balance-sheets`, { limit });
+export const uwCashFlowsRaw = (ticker: string, limit = 4) => uwFetch("uwCashFlows", `/stock/${T(ticker)}/cash-flows`, { limit });
+export const uwIncomeStatementsRaw = (ticker: string, limit = 4) => uwFetch("uwIncomeStatements", `/stock/${T(ticker)}/income-statements`, { limit });
+
+// --- alerts (triggered) ---
+export const uwAlertsRaw = (limit = 50) => uwFetch("uwAlerts", `/alerts`, { limit });
+
+// --- etf (note: plural /etfs/ path) ---
+export const uwEtfInfoRaw = (ticker: string) => uwFetch("uwEtfInfo", `/etfs/${T(ticker)}/info`, {});
+export const uwEtfHoldingsRaw = (ticker: string) => uwFetch("uwEtfHoldings", `/etfs/${T(ticker)}/holdings`, {});
+export const uwEtfExposureRaw = (ticker: string) => uwFetch("uwEtfExposure", `/etfs/${T(ticker)}/exposure`, {});

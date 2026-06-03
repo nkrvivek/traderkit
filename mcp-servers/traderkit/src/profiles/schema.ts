@@ -14,6 +14,7 @@ export const RulesToggles = z.object({
   R1_expiry_day_window: z.boolean().default(true),
   R2_strike_grid: z.boolean().default(true),
   R7_thesis_required: z.boolean().default(true),
+  R17_thesis_structure_match: z.boolean().default(true),
   quote_ttl_sec: z.number().positive().default(60),
   regime_ttl_sec: z.number().positive().default(900),
   portfolio_total_ttl_sec: z.number().positive().default(14400),
@@ -29,6 +30,7 @@ export const DEFAULT_RULES: RulesToggles = {
   R1_expiry_day_window: true,
   R2_strike_grid: true,
   R7_thesis_required: true,
+  R17_thesis_structure_match: true,
   quote_ttl_sec: 60,
   regime_ttl_sec: 900,
   portfolio_total_ttl_sec: 14400,
@@ -44,6 +46,7 @@ export const PERMISSIVE_RULES: RulesToggles = {
   R1_expiry_day_window: false,
   R2_strike_grid: false,
   R7_thesis_required: false,
+  R17_thesis_structure_match: false,
 };
 
 export const ProfileSchema = z.object({

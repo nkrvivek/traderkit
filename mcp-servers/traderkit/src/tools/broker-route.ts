@@ -31,7 +31,7 @@ function classifyBrokerRoute(
   }
 
   if (TRADESTATION_BROKERS.has(brokerLower)) {
-    return { route: "TRADESTATION", detail: `route via TradeStation MCP` };
+    return { route: "TRADESTATION", detail: `route via traderkit native ts_* tools` };
   }
 
   if (SNAPTRADE_BROKERS.has(brokerLower)) {
