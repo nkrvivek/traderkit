@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screenOptionsHandler } from "../../src/tools/screen-options.js";
+import { screenOptionsHandler, ivrGate, ivrGateLine } from "../../src/tools/screen-options.js";
 
 function occ(t: string, yymmdd: string, cp: "C" | "P", strike: number): string {
   const s = String(Math.round(strike * 1000)).padStart(8, "0");
@@ -251,5 +251,136 @@ describe("screenOptionsHandler", () => {
 
     expect(r.candidates).toHaveLength(0);
     expect(r.skipped[0]?.reason).toMatch(/UW_TOKEN/);
+  });
+
+  describe("IVR gate annotation", () => {
+    function makeFullSetup(opts: {
+      ticker: string;
+      ivRank: number | null;
+      strategy?: "csp" | "cc" | "pcs" | "ccs";
+    }) {
+      const expiry = isoInDays(30);
+      const yy = yymmdd(expiry);
+      const chain = [
+        { symbol: occ(opts.ticker, yy, "P", 280), strike: 280, type: "P" as const, bid: 2.5, ask: 2.7, delta: -0.22, oi: 500 },
+      ];
+      const ivRankData = opts.ivRank !== null ? [{ iv_rank: opts.ivRank }] : [];
+      const routes: Record<string, any> = {
+        [`/stock/${opts.ticker}/option-contracts`]: { data: chain.map((c) => ({
+          option_symbol: c.symbol, nbbo_bid: String(c.bid), nbbo_ask: String(c.ask),
+          open_interest: c.oi, volume: 10, implied_volatility: 0.25,
+        })) },
+        [`/stock/${opts.ticker}/greeks`]: { data: chain.map((c) => ({ put_option_symbol: c.symbol, put_delta: c.delta })) },
+        [`/stock/${opts.ticker}/expiry-breakdown`]: { data: [{ expires: expiry }] },
+        [`/stock/${opts.ticker}/iv-rank`]: { data: ivRankData },
+        [`/stock/${opts.ticker}/stock-state`]: { data: { close: 300, prev_close: 298 } },
+        "/stock/profile2": { marketCapitalization: 150000, finnhubIndustry: "Tech" },
+        "/calendar/earnings": { earningsCalendar: [] },
+      };
+      installFetch(routes);
+    }
+
+    it("ivr_gate=PASS when IVR=62 for CSP (≥50)", async () => {
+      makeFullSetup({ ticker: "TSLA", ivRank: 62, strategy: "csp" });
+      const r = await screenOptionsHandler({
+        tickers: ["TSLA"],
+        strategy: "csp",
+        iv_rank_min: 0,
+        min_mkt_cap_usd: 500_000_000,
+        min_yor: 0.005,
+      });
+      expect(r.candidates.length).toBeGreaterThanOrEqual(1);
+      const top = r.candidates[0]!;
+      expect(top.ivr_gate).toBe("PASS");
+      expect(top.notes.some((n) => n.includes("premium-sell gate PASS"))).toBe(true);
+      expect(top.notes.some((n) => n.includes("IVR 62"))).toBe(true);
+    });
+
+    it("ivr_gate=SOFT-FAIL when IVR=31 for CSP (<50)", async () => {
+      makeFullSetup({ ticker: "AMD", ivRank: 31, strategy: "csp" });
+      const r = await screenOptionsHandler({
+        tickers: ["AMD"],
+        strategy: "csp",
+        iv_rank_min: 0,
+        min_mkt_cap_usd: 500_000_000,
+        min_yor: 0.005,
+      });
+      expect(r.candidates.length).toBeGreaterThanOrEqual(1);
+      const top = r.candidates[0]!;
+      expect(top.ivr_gate).toBe("SOFT-FAIL");
+      expect(top.notes.some((n) => n.includes("premium rich? NO"))).toBe(true);
+      expect(top.notes.some((n) => n.includes("IVR 31"))).toBe(true);
+    });
+
+    it("ivr_gate=UNKNOWN when UW returns no iv_rank data", async () => {
+      makeFullSetup({ ticker: "MU", ivRank: null });
+      const r = await screenOptionsHandler({
+        tickers: ["MU"],
+        strategy: "csp",
+        iv_rank_min: 0,
+        min_mkt_cap_usd: 500_000_000,
+        min_yor: 0.005,
+      });
+      expect(r.candidates.length).toBeGreaterThanOrEqual(1);
+      const top = r.candidates[0]!;
+      expect(top.ivr_gate).toBe("UNKNOWN");
+      expect(top.notes.some((n) => n.includes("UNKNOWN"))).toBe(true);
+    });
+
+    it("gate=PASS at IVR=50 (boundary)", async () => {
+      makeFullSetup({ ticker: "SPY", ivRank: 50 });
+      const r = await screenOptionsHandler({
+        tickers: ["SPY"],
+        strategy: "csp",
+        iv_rank_min: 0,
+        min_mkt_cap_usd: 500_000_000,
+        min_yor: 0.005,
+      });
+      expect(r.candidates.length).toBeGreaterThanOrEqual(1);
+      expect(r.candidates[0]!.ivr_gate).toBe("PASS");
+    });
+
+    it("gate=SOFT-FAIL at IVR=49 (boundary)", async () => {
+      makeFullSetup({ ticker: "QQQ", ivRank: 49 });
+      const r = await screenOptionsHandler({
+        tickers: ["QQQ"],
+        strategy: "csp",
+        iv_rank_min: 0,
+        min_mkt_cap_usd: 500_000_000,
+        min_yor: 0.005,
+      });
+      expect(r.candidates.length).toBeGreaterThanOrEqual(1);
+      expect(r.candidates[0]!.ivr_gate).toBe("SOFT-FAIL");
+    });
+  });
+});
+
+// Pure-function unit tests for ivrGate + ivrGateLine
+describe("ivrGate", () => {
+  it("returns PASS for IVR=50 csp", () => expect(ivrGate(50, "csp")).toBe("PASS"));
+  it("returns PASS for IVR=99 cc", () => expect(ivrGate(99, "cc")).toBe("PASS"));
+  it("returns SOFT-FAIL for IVR=49 pcs", () => expect(ivrGate(49, "pcs")).toBe("SOFT-FAIL"));
+  it("returns SOFT-FAIL for IVR=0 ccs", () => expect(ivrGate(0, "ccs")).toBe("SOFT-FAIL"));
+  it("returns UNKNOWN when ivRank undefined", () => expect(ivrGate(undefined, "csp")).toBe("UNKNOWN"));
+  it("returns UNKNOWN for non-premium-sell strategy", () => expect(ivrGate(70, "other")).toBe("UNKNOWN"));
+});
+
+describe("ivrGateLine", () => {
+  it("PASS line contains IVR value and PASS keyword", () => {
+    const line = ivrGateLine(62, "csp");
+    expect(line).toContain("IVR 62");
+    expect(line).toContain("PASS");
+  });
+  it("SOFT-FAIL line contains IVR value and 'premium rich? NO'", () => {
+    const line = ivrGateLine(31, "csp");
+    expect(line).toContain("IVR 31");
+    expect(line).toContain("premium rich? NO");
+  });
+  it("UNKNOWN line when ivRank missing", () => {
+    const line = ivrGateLine(undefined, "csp");
+    expect(line).toContain("UNKNOWN");
+  });
+  it("empty string for non-premium-sell strategy", () => {
+    expect(ivrGateLine(80, "other")).toBe("");
   });
 });

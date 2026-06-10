@@ -204,4 +204,87 @@ describe("signalRankHandler", () => {
       expect(r.ranked[0]!.ticker).toBe("HIGH");
     });
   });
+
+  describe("IVR gate warnings in signal-rank", () => {
+    const BASE_SIGNALS = [
+      { ticker: "AAPL", group: "FLOW" as const, source: "uw_flow", direction: "BULLISH" as const, confidence: 0.6 },
+    ];
+
+    it("ivr_warnings empty when ivr_rank_by_ticker not supplied", async () => {
+      const r = await signalRankHandler({ signals: BASE_SIGNALS });
+      expect(r.ranked[0]!.ivr_warnings).toEqual([]);
+    });
+
+    it("ivr_warnings empty when ticker not in premium_sell_tickers", async () => {
+      const r = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: { AAPL: 45 },
+        // premium_sell_tickers not set — no annotation
+      });
+      expect(r.ranked[0]!.ivr_warnings).toEqual([]);
+    });
+
+    it("emits PASS warning when IVR=62 and ticker is premium-sell", async () => {
+      const r = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: { AAPL: 62 },
+        premium_sell_tickers: ["AAPL"],
+      });
+      const w = r.ranked[0]!.ivr_warnings;
+      expect(w.length).toBe(1);
+      expect(w[0]).toContain("IVR 62");
+      expect(w[0]).toContain("PASS");
+    });
+
+    it("emits SOFT-FAIL warning when IVR=31 and ticker is premium-sell", async () => {
+      const r = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: { AAPL: 31 },
+        premium_sell_tickers: ["AAPL"],
+      });
+      const w = r.ranked[0]!.ivr_warnings;
+      expect(w.length).toBe(1);
+      expect(w[0]).toContain("IVR 31");
+      expect(w[0]).toContain("premium rich? NO");
+    });
+
+    it("emits UNKNOWN warning when IVR missing for premium-sell ticker", async () => {
+      const r = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: {}, // AAPL not in map
+        premium_sell_tickers: ["AAPL"],
+      });
+      const w = r.ranked[0]!.ivr_warnings;
+      expect(w.length).toBe(1);
+      expect(w[0]).toContain("UNKNOWN");
+    });
+
+    it("does not affect confluence_score (warning-only, no scoring wiring)", async () => {
+      const withIvr = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: { AAPL: 75 },
+        premium_sell_tickers: ["AAPL"],
+      });
+      const withoutIvr = await signalRankHandler({ signals: BASE_SIGNALS });
+      expect(withIvr.ranked[0]!.confluence_score).toBe(withoutIvr.ranked[0]!.confluence_score);
+    });
+
+    it("PASS at boundary IVR=50", async () => {
+      const r = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: { AAPL: 50 },
+        premium_sell_tickers: ["AAPL"],
+      });
+      expect(r.ranked[0]!.ivr_warnings[0]).toContain("PASS");
+    });
+
+    it("SOFT-FAIL at boundary IVR=49", async () => {
+      const r = await signalRankHandler({
+        signals: BASE_SIGNALS,
+        ivr_rank_by_ticker: { AAPL: 49 },
+        premium_sell_tickers: ["AAPL"],
+      });
+      expect(r.ranked[0]!.ivr_warnings[0]).toContain("premium rich? NO");
+    });
+  });
 });

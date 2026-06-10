@@ -33,6 +33,19 @@ export const SignalRankArgs = z.object({
   max_results: z.number().positive().default(20),
   earnings_within_days: z.record(z.string(), z.number()).optional(),
   iv_tier_by_ticker: z.record(z.string(), z.enum(["GREEN", "YELLOW", "RED"])).optional(),
+  /** IVR (IV rank 0–100) per ticker from UW /stock/{T}/iv-rank.
+   *  Used to emit VOLATILITY-group IVR gate annotations on premium-sell proposals.
+   *  IVR ≥ 50 → note "IVR_PASS" in ivr_warnings (VOLATILITY channel edge confirmed).
+   *  IVR < 50 → warning "IVR_SOFT_FAIL" (premium not demonstrably rich).
+   *  TODO(ivr-scoring): wire IVR≥50 as a synthetic VOLATILITY:ivr_rank signal hit
+   *    incrementing groups_hit/channels_hit/confluence_score — deferred to avoid
+   *    breaking existing tier calibration without a backtest validation pass.
+   */
+  ivr_rank_by_ticker: z.record(z.string(), z.number().min(0).max(100)).optional(),
+  /** Tickers whose signals represent a premium-sell proposal (CSP/CC/PCS/CCS).
+   *  Required for IVR gate annotation; non-sell tickers are left unannotated.
+   */
+  premium_sell_tickers: z.array(z.string()).optional(),
 });
 
 interface RankedSignal {
@@ -50,6 +63,9 @@ interface RankedSignal {
   thesis_bonus: number;
   earnings_penalty: number;
   green_bonus: number;
+  /** IVR gate annotations for premium-sell tickers (populated when ivr_rank_by_ticker supplied).
+   *  Empty array = not a premium-sell ticker OR IVR data not supplied. */
+  ivr_warnings: string[];
 }
 
 const SOURCE_GROUP_HEURISTIC: Array<[RegExp, Group]> = [
@@ -119,6 +135,20 @@ export async function signalRankHandler(raw: unknown) {
 
     const confluenceScore = groups.size * 10 + channels.size * 2 + thesisBonus + greenBonus - earningsPenalty;
 
+    // IVR gate annotation (warning-only; scoring wiring deferred — see TODO in SignalRankArgs)
+    const ivrWarnings: string[] = [];
+    const isPremiumSell = args.premium_sell_tickers?.includes(ticker) ?? false;
+    if (isPremiumSell && args.ivr_rank_by_ticker) {
+      const ivr = args.ivr_rank_by_ticker[ticker];
+      if (ivr === undefined) {
+        ivrWarnings.push(`IVR unknown — premium-sell gate UNKNOWN (data missing for ${ticker})`);
+      } else if (ivr >= 50) {
+        ivrWarnings.push(`IVR ${Math.round(ivr)} — premium-sell gate PASS (VOLATILITY channel edge confirmed)`);
+      } else {
+        ivrWarnings.push(`IVR ${Math.round(ivr)} — premium rich? NO (soft gate: prefer waiting or switch to debit structures for ${ticker})`);
+      }
+    }
+
     ranked.push({
       ticker,
       direction,
@@ -139,6 +169,7 @@ export async function signalRankHandler(raw: unknown) {
       thesis_bonus: thesisBonus,
       earnings_penalty: earningsPenalty,
       green_bonus: greenBonus,
+      ivr_warnings: ivrWarnings,
     });
   }
 

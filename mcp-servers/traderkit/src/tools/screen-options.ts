@@ -26,6 +26,31 @@ export const ScreenOptionsArgs = z.object({
 
 type Args = z.infer<typeof ScreenOptionsArgs>;
 
+/** IVR gate status for premium-selling structures.
+ *  PASS    = IVR ≥ 50 (structural VRP edge confirmed).
+ *  SOFT-FAIL = IVR < 50 (premium not demonstrably rich — soft warn, never hard-block).
+ *  UNKNOWN = UW returned no iv_rank data.
+ */
+export type IvrGate = "PASS" | "SOFT-FAIL" | "UNKNOWN";
+
+/** All strategies in screen_options are premium-sell structures. */
+const PREMIUM_SELL_STRATEGIES = new Set(["csp", "cc", "pcs", "ccs"]);
+
+export function ivrGate(ivRank: number | undefined, strategy: string): IvrGate {
+  if (!PREMIUM_SELL_STRATEGIES.has(strategy)) return "UNKNOWN"; // debit/directional — no gate
+  if (ivRank === undefined) return "UNKNOWN";
+  return ivRank >= 50 ? "PASS" : "SOFT-FAIL";
+}
+
+/** One-liner suitable for the notes/text output. */
+export function ivrGateLine(ivRank: number | undefined, strategy: string): string {
+  const gate = ivrGate(ivRank, strategy);
+  if (!PREMIUM_SELL_STRATEGIES.has(strategy)) return "";
+  if (gate === "UNKNOWN") return "IVR unknown — premium-sell gate UNKNOWN (data missing)";
+  if (gate === "PASS") return `IVR ${Math.round(ivRank!)} — premium-sell gate PASS`;
+  return `IVR ${Math.round(ivRank!)} — premium rich? NO (soft gate: prefer waiting or switch to debit structures)`;
+}
+
 interface Candidate {
   ticker: string;
   strategy: string;
@@ -40,6 +65,8 @@ interface Candidate {
   pop: number;
   iv?: number | undefined;
   iv_rank?: number | undefined;
+  /** IVR soft gate: PASS ≥50, SOFT-FAIL <50, UNKNOWN when data missing. Never hard-blocks. */
+  ivr_gate: IvrGate;
   oi: number;
   volume?: number | undefined;
   underlying_price?: number | undefined;
@@ -158,6 +185,11 @@ export async function screenOptionsHandler(raw: unknown): Promise<{
           if (ivRank.iv_rank !== undefined && ivRank.iv_rank > 60) notes.push("high_iv_rank");
           if (leg.volume !== undefined && leg.volume > (leg.open_interest ?? 0)) notes.push("unusual_vol");
 
+          // IVR soft gate — annotate every premium-sell candidate (never hard-blocks; vault rules authoritative)
+          const gate = ivrGate(ivRank.iv_rank, args.strategy);
+          const gateLine = ivrGateLine(ivRank.iv_rank, args.strategy);
+          if (gateLine) notes.push(gateLine);
+
           const dcfVsSpotPct = (dcf.dcf !== undefined && state.price)
             ? round((dcf.dcf / state.price - 1) * 100, 100)
             : undefined;
@@ -178,6 +210,7 @@ export async function screenOptionsHandler(raw: unknown): Promise<{
             pop: round(pop, 10_000),
             iv: leg.iv,
             iv_rank: ivRank.iv_rank,
+            ivr_gate: gate,
             oi: leg.open_interest,
             volume: leg.volume,
             underlying_price: state.price,
