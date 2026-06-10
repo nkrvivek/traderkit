@@ -36,14 +36,14 @@ export type IvrGate = "PASS" | "SOFT-FAIL" | "UNKNOWN";
 /** All strategies in screen_options are premium-sell structures. */
 const PREMIUM_SELL_STRATEGIES = new Set(["csp", "cc", "pcs", "ccs"]);
 
-export function ivrGate(ivRank: number | undefined, strategy: string): IvrGate {
+export function ivrGate(ivRank: number | null | undefined, strategy: string): IvrGate {
   if (!PREMIUM_SELL_STRATEGIES.has(strategy)) return "UNKNOWN"; // debit/directional — no gate
-  if (ivRank === undefined) return "UNKNOWN";
+  if (ivRank == null || Number.isNaN(ivRank)) return "UNKNOWN";
   return ivRank >= 50 ? "PASS" : "SOFT-FAIL";
 }
 
 /** One-liner suitable for the notes/text output. */
-export function ivrGateLine(ivRank: number | undefined, strategy: string): string {
+export function ivrGateLine(ivRank: number | null | undefined, strategy: string): string {
   const gate = ivrGate(ivRank, strategy);
   if (!PREMIUM_SELL_STRATEGIES.has(strategy)) return "";
   if (gate === "UNKNOWN") return "IVR unknown — premium-sell gate UNKNOWN (data missing)";

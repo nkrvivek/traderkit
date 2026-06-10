@@ -384,3 +384,15 @@ describe("ivrGateLine", () => {
     expect(ivrGateLine(80, "other")).toBe("");
   });
 });
+
+describe("ivrGate null/NaN safety (dry-run audit 2026-06-10)", () => {
+  it("returns UNKNOWN for null (was SOFT-FAIL)", () => {
+    expect(ivrGate(null, "csp")).toBe("UNKNOWN");
+  });
+  it("returns UNKNOWN for NaN", () => {
+    expect(ivrGate(Number.NaN, "csp")).toBe("UNKNOWN");
+  });
+  it("ivrGateLine for null says data missing, not IVR 0", () => {
+    expect(ivrGateLine(null, "csp")).toContain("data missing");
+  });
+});
