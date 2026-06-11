@@ -37,15 +37,20 @@ export const SignalRankArgs = z.object({
    *  Used to emit VOLATILITY-group IVR gate annotations on premium-sell proposals.
    *  IVR ≥ 50 → note "IVR_PASS" in ivr_warnings (VOLATILITY channel edge confirmed).
    *  IVR < 50 → warning "IVR_SOFT_FAIL" (premium not demonstrably rich).
-   *  TODO(ivr-scoring): wire IVR≥50 as a synthetic VOLATILITY:ivr_rank signal hit
-   *    incrementing groups_hit/channels_hit/confluence_score — deferred to avoid
-   *    breaking existing tier calibration without a backtest validation pass.
+   *  When ivr_scoring_enabled=true: IVR≥50 on premium-sell tickers counts as a
+   *    synthetic VOLATILITY channel hit, incrementing groups_hit/channels_hit/confluence_score.
    */
   ivr_rank_by_ticker: z.record(z.string(), z.number().min(0).max(100)).optional(),
   /** Tickers whose signals represent a premium-sell proposal (CSP/CC/PCS/CCS).
    *  Required for IVR gate annotation; non-sell tickers are left unannotated.
    */
   premium_sell_tickers: z.array(z.string()).optional(),
+  /** Opt-in: when true and IVR≥50 on a premium-sell ticker, count IVR as a
+   *  synthetic VOLATILITY:ivr_rank channel hit in confluence scoring.
+   *  Default false — keeps backward-compat tier calibration.
+   *  Enable after backtest validation of IVR-scoring impact on tier distribution.
+   */
+  ivr_scoring_enabled: z.boolean().default(false),
 });
 
 interface RankedSignal {
@@ -130,24 +135,38 @@ export async function signalRankHandler(raw: unknown) {
 
     const earningsDays = args.earnings_within_days?.[ticker];
     const ivTier = args.iv_tier_by_ticker?.[ticker];
-    const earningsPenalty = earningsDays !== undefined && earningsDays <= 7 && ivTier === "RED" ? 15 : 0;
+    // Earnings penalty: base -10 for ANY ticker with earnings inside trade life
+    // (≤7d), regardless of IV tier (spec: signal-confluence.md:49).
+    // RED tier adds an additional -5 increment (elevated IV-crush + assignment risk).
+    // Net: base -10 (any), RED adds -5 → total -15 for RED.
+    const earningsBase = earningsDays !== undefined && earningsDays <= 7 ? 10 : 0;
+    const earningsRedIncrement = earningsBase > 0 && ivTier === "RED" ? 5 : 0;
+    const earningsPenalty = earningsBase + earningsRedIncrement;
     const greenBonus = earningsDays !== undefined && earningsDays <= 14 && ivTier === "GREEN" ? 10 : 0;
 
-    const confluenceScore = groups.size * 10 + channels.size * 2 + thesisBonus + greenBonus - earningsPenalty;
-
-    // IVR gate annotation (warning-only; scoring wiring deferred — see TODO in SignalRankArgs)
+    // IVR gate annotation + optional scoring
     const ivrWarnings: string[] = [];
     const isPremiumSell = args.premium_sell_tickers?.includes(ticker) ?? false;
+    let ivrScoringHit = false;
     if (isPremiumSell && args.ivr_rank_by_ticker) {
       const ivr = args.ivr_rank_by_ticker[ticker];
       if (ivr === undefined) {
         ivrWarnings.push(`IVR unknown — premium-sell gate UNKNOWN (data missing for ${ticker})`);
       } else if (ivr >= 50) {
         ivrWarnings.push(`IVR ${Math.round(ivr)} — premium-sell gate PASS (VOLATILITY channel edge confirmed)`);
+        if (args.ivr_scoring_enabled) {
+          // Opt-in: count IVR≥50 as a synthetic VOLATILITY:ivr_rank channel hit
+          groups.add("VOLATILITY");
+          channels.add("VOLATILITY:ivr_rank");
+          ivrScoringHit = true;
+        }
       } else {
         ivrWarnings.push(`IVR ${Math.round(ivr)} — premium rich? NO (soft gate: prefer waiting or switch to debit structures for ${ticker})`);
       }
     }
+
+    // Recompute groups/channels size after optional IVR scoring injection
+    const confluenceScore = groups.size * 10 + channels.size * 2 + thesisBonus + greenBonus - earningsPenalty;
 
     ranked.push({
       ticker,

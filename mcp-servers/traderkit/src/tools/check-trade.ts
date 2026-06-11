@@ -29,6 +29,14 @@ export const CheckTradeArgs = z.object({
   existing_ticker_exposure_usd: z.number().nonnegative().default(0),
   require_wash_sale_check: z.boolean().default(false),
   now: z.string().optional(),
+  // R0 freshness timestamps — pass ISO8601 strings from the upstream data pull.
+  // Required for SELL_TO_OPEN (short opens) under DEFAULT_RULES R0_no_stale_data.
+  // Omitting them when R0 is enabled causes an unavoidable R0 fail (gate is
+  // unsatisfiable). Use PERMISSIVE_RULES or supply these fields to satisfy R0.
+  quote_as_of: z.string().optional(),
+  regime_as_of: z.string().optional(),
+  portfolio_total_as_of: z.string().optional(),
+  activities_as_of: z.string().optional(),
   expiry_date: z.string().optional(),
   selected_strike: z.number().optional(),
   strike_grid: z.array(StrikeGridEntry).optional(),
@@ -83,6 +91,10 @@ export async function checkTradeHandler(
     },
     requireWashSaleCheck: args.require_wash_sale_check,
     now: args.now ? new Date(args.now) : undefined,
+    quote_as_of: args.quote_as_of,
+    regime_as_of: args.regime_as_of,
+    portfolio_total_as_of: args.portfolio_total_as_of,
+    activities_as_of: args.activities_as_of,
     expiry_date: args.expiry_date,
     strike_grid: args.strike_grid,
     grid_as_of: args.grid_as_of,

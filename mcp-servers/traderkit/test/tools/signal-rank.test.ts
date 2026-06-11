@@ -139,7 +139,7 @@ describe("signalRankHandler", () => {
       expect(a.tier).toBe("WATCH");
     });
 
-    it("RED tier earnings within 7d applies -15 penalty", async () => {
+    it("RED tier earnings within 7d applies -15 penalty (base -10 + RED increment -5)", async () => {
       const r = await signalRankHandler({
         signals: [
           { ticker: "NVDA", group: "POSITIONING", source: "uw_darkpool", direction: "BULLISH", confidence: 0.7 },
@@ -151,9 +151,53 @@ describe("signalRankHandler", () => {
         iv_tier_by_ticker: { NVDA: "RED" },
       });
       const a = r.ranked[0]!;
-      expect(a.earnings_penalty).toBe(15);
+      expect(a.earnings_penalty).toBe(15);  // base 10 + RED increment 5
       expect(a.confluence_score).toBe(40 + 8 - 15);
       expect(a.tier).toBe("TIER-2");
+    });
+
+    it("YELLOW tier earnings within 7d applies -10 base penalty (no IV-tier guard)", async () => {
+      // Finding #16: earnings penalty must fire for ANY ticker w/ earnings in window,
+      // not only when ivTier=RED. YELLOW IV tier should still get base -10.
+      const r = await signalRankHandler({
+        signals: [
+          { ticker: "MSFT", group: "POSITIONING", source: "uw_darkpool", direction: "BULLISH", confidence: 0.7 },
+          { ticker: "MSFT", group: "FLOW", source: "uw_flow", direction: "BULLISH", confidence: 0.6 },
+          { ticker: "MSFT", group: "TECHNICAL", source: "uw_technicals", direction: "BULLISH", confidence: 0.5 },
+          { ticker: "MSFT", group: "VOLATILITY", source: "iv_rank", direction: "BULLISH", confidence: 0.5 },
+        ],
+        earnings_within_days: { MSFT: 4 },
+        iv_tier_by_ticker: { MSFT: "YELLOW" },
+      });
+      const a = r.ranked[0]!;
+      // YELLOW: base penalty -10, no RED increment
+      expect(a.earnings_penalty).toBe(10);
+      expect(a.confluence_score).toBe(40 + 8 - 10);
+    });
+
+    it("no iv_tier_by_ticker with earnings inside window still applies -10 base penalty", async () => {
+      // Caller passes earnings_within_days but no iv_tier — penalty must still apply
+      const r = await signalRankHandler({
+        signals: [
+          { ticker: "AAPL", group: "FLOW", source: "uw_flow", direction: "BULLISH", confidence: 0.6 },
+          { ticker: "AAPL", group: "POSITIONING", source: "darkpool", direction: "BULLISH", confidence: 0.6 },
+        ],
+        earnings_within_days: { AAPL: 3 },
+        // iv_tier_by_ticker intentionally omitted
+      });
+      const a = r.ranked[0]!;
+      expect(a.earnings_penalty).toBe(10);  // base penalty, no RED increment
+    });
+
+    it("earnings >7d from now applies no penalty", async () => {
+      const r = await signalRankHandler({
+        signals: [
+          { ticker: "TSLA", group: "FLOW", source: "uw_flow", direction: "BULLISH", confidence: 0.6 },
+        ],
+        earnings_within_days: { TSLA: 14 },  // outside 7d window
+        iv_tier_by_ticker: { TSLA: "RED" },  // RED should not matter outside window
+      });
+      expect(r.ranked[0]!.earnings_penalty).toBe(0);
     });
 
     it("GREEN tier earnings within 14d applies +10 bonus", async () => {
@@ -285,6 +329,69 @@ describe("signalRankHandler", () => {
         premium_sell_tickers: ["AAPL"],
       });
       expect(r.ranked[0]!.ivr_warnings[0]).toContain("premium rich? NO");
+    });
+
+    describe("ivr_scoring_enabled=true mode (finding #31)", () => {
+      it("IVR>=50 on premium-sell ticker counts as VOLATILITY channel hit when scoring enabled", async () => {
+        const withScoring = await signalRankHandler({
+          signals: BASE_SIGNALS,  // FLOW group only
+          ivr_rank_by_ticker: { AAPL: 75 },
+          premium_sell_tickers: ["AAPL"],
+          ivr_scoring_enabled: true,
+        });
+        const withoutScoring = await signalRankHandler({
+          signals: BASE_SIGNALS,
+          ivr_rank_by_ticker: { AAPL: 75 },
+          premium_sell_tickers: ["AAPL"],
+          ivr_scoring_enabled: false,
+        });
+        // With scoring: VOLATILITY group added → groups_hit 1→2, channels_hit 1→2
+        // score delta: +10 (group) +2 (channel) = +12
+        expect(withScoring.ranked[0]!.confluence_score).toBe(
+          withoutScoring.ranked[0]!.confluence_score + 12
+        );
+        expect(withScoring.ranked[0]!.groups_hit).toBe(withoutScoring.ranked[0]!.groups_hit + 1);
+        expect(withScoring.ranked[0]!.channels_hit).toBe(withoutScoring.ranked[0]!.channels_hit + 1);
+      });
+
+      it("IVR<50 does NOT add scoring hit even when ivr_scoring_enabled=true", async () => {
+        const with_ = await signalRankHandler({
+          signals: BASE_SIGNALS,
+          ivr_rank_by_ticker: { AAPL: 35 },
+          premium_sell_tickers: ["AAPL"],
+          ivr_scoring_enabled: true,
+        });
+        const without = await signalRankHandler({ signals: BASE_SIGNALS });
+        expect(with_.ranked[0]!.confluence_score).toBe(without.ranked[0]!.confluence_score);
+      });
+
+      it("ivr_scoring_enabled=false is default — backward compat", async () => {
+        // Omitting ivr_scoring_enabled should behave like false
+        const explicit = await signalRankHandler({
+          signals: BASE_SIGNALS,
+          ivr_rank_by_ticker: { AAPL: 75 },
+          premium_sell_tickers: ["AAPL"],
+          ivr_scoring_enabled: false,
+        });
+        const implicit = await signalRankHandler({
+          signals: BASE_SIGNALS,
+          ivr_rank_by_ticker: { AAPL: 75 },
+          premium_sell_tickers: ["AAPL"],
+          // ivr_scoring_enabled omitted → defaults false
+        });
+        expect(explicit.ranked[0]!.confluence_score).toBe(implicit.ranked[0]!.confluence_score);
+      });
+
+      it("non-premium-sell ticker not affected by ivr_scoring_enabled", async () => {
+        const with_ = await signalRankHandler({
+          signals: BASE_SIGNALS,
+          ivr_rank_by_ticker: { AAPL: 80 },
+          // premium_sell_tickers omitted → AAPL not a sell ticker
+          ivr_scoring_enabled: true,
+        });
+        const without = await signalRankHandler({ signals: BASE_SIGNALS });
+        expect(with_.ranked[0]!.confluence_score).toBe(without.ranked[0]!.confluence_score);
+      });
     });
   });
 });
