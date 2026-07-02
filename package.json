@@ -5,8 +5,12 @@
   "type": "module",
   "description": "Packaged Claude-Code-as-trading-terminal setup with risk-gated MCP trading.",
   "license": "MIT",
-  "engines": { "node": ">=20" },
-  "workspaces": ["mcp-servers/*"],
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "mcp-servers/*"
+  ],
   "scripts": {
     "build": "npm run -ws build",
     "test": "npm run -ws test",
@@ -15,5 +19,9 @@
   },
   "devDependencies": {
     "tsx": "^4.19.0"
+  },
+  "overrides": {
+    "axios": "^1.18.1",
+    "esbuild": "^0.28.1"
   }
 }
