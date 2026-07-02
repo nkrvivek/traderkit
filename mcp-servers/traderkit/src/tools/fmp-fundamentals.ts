@@ -6,7 +6,10 @@ export const FmpFundamentalsArgs = z.object({
     .describe("1–25 ticker symbols. FMP free tier is 250 calls/day."),
   include: z.array(z.enum(["quote", "dcf", "target", "earnings"]))
     .optional()
-    .describe("Subset of fields to fetch per ticker. Default: all four."),
+    .describe("Subset of fields to fetch per ticker. Default: ['dcf','target'] — "
+      + "quote and earnings duplicate UW (uw_stock / uw_earnings); request them "
+      + "explicitly only when UW is unavailable. Keeps FMP free-tier 250/day usage "
+      + "on the two fields UW cannot provide (DCF, analyst price targets)."),
   earnings_window_days: z.number().int().min(1).max(180).default(60)
     .describe("Earnings-calendar window (days forward from today)."),
 });
@@ -36,7 +39,10 @@ export async function fmpFundamentalsHandler(
   raw: unknown,
 ): Promise<{ rows: FmpFundamentalsRow[] }> {
   const args = FmpFundamentalsArgs.parse(raw);
-  const include = new Set(args.include ?? ["quote", "dcf", "target", "earnings"]);
+  // Default trimmed 2026-07-01: quote + earnings duplicate UW endpoints; DCF and
+  // analyst targets are the only fields UW lacks. Halves FMP call volume per ticker
+  // (2 calls not 4) → free-tier 250/day cap stops binding on heavy scan days.
+  const include = new Set(args.include ?? ["dcf", "target"]);
   const today = new Date();
   const fromIso = today.toISOString().slice(0, 10);
   const toIso = new Date(today.getTime() + args.earnings_window_days * 86_400_000)
@@ -61,12 +67,14 @@ export async function fmpFundamentalsHandler(
         }).catch(catchInto("quote")),
       );
     }
+    let dcfSpot: number | undefined;
     if (include.has("dcf")) {
       tasks.push(
         fmpDcf(T).then((d): void => {
           row.dcf = d.dcf;
           if (d.dcf !== undefined && d.stock_price) {
             row.dcf_vs_spot_pct = (d.dcf / d.stock_price - 1) * 100;
+            dcfSpot = d.stock_price;
           }
         }).catch(catchInto("dcf")),
       );
@@ -93,8 +101,12 @@ export async function fmpFundamentalsHandler(
     }
 
     await Promise.all(tasks);
-    if (row.target_consensus !== undefined && row.spot !== undefined) {
-      row.target_vs_spot_pct = (row.target_consensus / row.spot - 1) * 100;
+    // Spot for the target-vs-spot derivation: quote when fetched, else the DCF
+    // endpoint's stock_price — keeps target_vs_spot_pct alive under the trimmed
+    // default (no quote call).
+    const spotRef = row.spot ?? dcfSpot;
+    if (row.target_consensus !== undefined && spotRef !== undefined) {
+      row.target_vs_spot_pct = (row.target_consensus / spotRef - 1) * 100;
     }
     if (errors.length) row.errors = errors;
     return row;
