@@ -41,6 +41,8 @@ import { CalcMaxPainArgs, calcMaxPainHandler } from "./tools/calc-max-pain.js";
 import { InstHoldingsArgs, instHoldingsHandler } from "./tools/inst-holdings.js";
 import { TrackActivistsArgs, trackActivistsHandler } from "./tools/track-activists.js";
 import { ExplainPayoffArgs, explainPayoffHandler } from "./tools/explain-payoff.js";
+import { AnalyzeStructureArgs, analyzeStructureHandler } from "./tools/analyze-structure.js";
+import { SqueezeScoreArgs, squeezeScoreHandler } from "./tools/squeeze-score.js";
 import { ReportTradesArgs, reportTradesHandler } from "./tools/report-trades.js";
 import { VerifyFillArgs, verifyFillHandler } from "./tools/verify-fill.js";
 import { RepricingCheckArgs, repricingCheckHandler } from "./tools/repricing-check.js";
@@ -157,6 +159,10 @@ const TOOLS = [
     inputSchema: toolInput(TrackActivistsArgs, ["mode"]) },
   { name: "explain_payoff", description: "Plain-English payoff narration for a proposed trade. Supports covered_call, cash_secured_put, put_credit_spread, call_credit_spread, long_stock. Returns narrative + scenarios (win/partial/worst), breakeven, max profit/loss in dollars. Use in Phase 4 alongside propose_trade so users see 'if X happens you make $Y' before approving. Demystifies options for new traders.",
     inputSchema: toolInput(ExplainPayoffArgs, ["ticker", "structure", "spot"]) },
+  { name: "analyze_structure", description: "Desk metrics for an arbitrary multi-leg options structure (any mix of call/put/stock legs, signed qty +long/-short). Black-Scholes engine returns POP (risk-neutral prob of profit), P50 (prob of >=50% of max profit), max profit/loss, ROC, prob-of-touch of the nearest breakeven, and net position Greeks (delta/gamma, theta per day, vega/rho per 0.01). Unbounded sides report null + *_unbounded=true. Each option leg: {right, qty (signed), strike, T (years), iv (decimal), entry_price}. Verified against the options-analyzer golden vectors. Use in Phase 4 for any structure explain_payoff's fixed templates don't cover.",
+    inputSchema: toolInput(AnalyzeStructureArgs, ["spot", "legs"]) },
+  { name: "squeeze_score", description: "0-100 short-squeeze composite: crowded-short × aggressive-call-buying × gamma-load. Sub-scores: short_component (0-40, from uw_shorts short-interest %float + days-to-cover), flow_component (0-40, from uw_flow net ask-side call premium + call/put skew), gamma_component (0-20, from uw_gex_levels spot proximity to a gamma wall/flip). Caller passes the three input blocks sourced from those uw_* tools; pure/deterministic. Never a bare number — returns sub-scores + the raw inputs behind each so it is auditable.",
+    inputSchema: toolInput(SqueezeScoreArgs, ["ticker", "short_interest_pct_float", "days_to_cover", "net_call_premium_usd", "gamma_proximity"]) },
   { name: "report_trades", description: "Weekly/monthly trade scoreboard. Reads $TRADERKIT_HOME/sessions/**/*.json (from session_write action=save) and aggregates: trades executed, premium collected, realized P&L, win rate, breakdown by structure/ticker/regime. Defaults to last 7 days, live modes only (include_dry_run=true to include paper trades). Answers 'how did my covered-call ladder actually perform?' without a vault.",
     inputSchema: toolInput(ReportTradesArgs, []) },
   { name: "verify_fill", description: "R4 fill verification. Compare intended vs filled quantities per leg and coerce session status label ('executed' | 'partial-fill (N/M)' | 'submitted-unverified' | 'failed'). Required before any session_write status=executed. Source tag required (ib-gateway | ib-flex | snaptrade-list-orders | tradestation | manual). Origin: BBAI 2026-04-17 ×25 SP submitted / 1 filled while session marked executed → 2-day vault drift.",
@@ -308,6 +314,8 @@ async function main() {
         case "inst_holdings":  result = await instHoldingsHandler(req.params.arguments); break;
         case "track_activists": result = await trackActivistsHandler(req.params.arguments); break;
         case "explain_payoff": result = await explainPayoffHandler(req.params.arguments); break;
+        case "analyze_structure": result = await analyzeStructureHandler(req.params.arguments); break;
+        case "squeeze_score":  result = await squeezeScoreHandler(req.params.arguments); break;
         case "report_trades":  result = await reportTradesHandler(req.params.arguments); break;
         case "verify_fill":    result = await verifyFillHandler(req.params.arguments); break;
         case "repricing_check": result = await repricingCheckHandler(req.params.arguments); break;

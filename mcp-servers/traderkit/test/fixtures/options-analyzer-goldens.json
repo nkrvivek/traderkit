@@ -1,0 +1,137 @@
+{
+  "_contract": "options-analyzer v0 \u2014 risk-neutral POP, per-day theta, vega/rho per 0.01, mult=100, grid N=40001 [1e-4*S0,5*S0]",
+  "goldens": [
+    {
+      "name": "long_call_atm",
+      "spot": 100.0,
+      "horizon_days": 30.0,
+      "underlying_iv": 0.25,
+      "max_profit": null,
+      "max_loss": null,
+      "max_profit_unbounded": true,
+      "max_loss_unbounded": true,
+      "roc": null,
+      "pop": 0.3424,
+      "p50": null,
+      "prob_touch_nearest_be": 0.6779,
+      "nearest_breakeven": 103.0211,
+      "greeks": {
+        "delta": 53.256,
+        "gamma": 5.5476,
+        "theta": -5.3002,
+        "vega": 11.3992,
+        "rho": 4.1289
+      }
+    },
+    {
+      "name": "short_put_csp",
+      "spot": 100.0,
+      "horizon_days": 30.0,
+      "underlying_iv": 0.25,
+      "max_profit": 89.64,
+      "max_loss": null,
+      "max_profit_unbounded": false,
+      "max_loss_unbounded": true,
+      "roc": null,
+      "pop": 0.8046,
+      "p50": 0.7857,
+      "prob_touch_nearest_be": 0.3965,
+      "nearest_breakeven": 94.1036,
+      "greeks": {
+        "delta": 21.2619,
+        "gamma": -4.0504,
+        "theta": 3.225,
+        "vega": -8.3227,
+        "rho": 1.8212
+      }
+    },
+    {
+      "name": "bull_put_spread",
+      "spot": 100.0,
+      "horizon_days": 30.0,
+      "underlying_iv": 0.25,
+      "max_profit": 70.46,
+      "max_loss": -429.54,
+      "max_profit_unbounded": false,
+      "max_loss_unbounded": false,
+      "roc": 0.164,
+      "pop": 0.7969,
+      "p50": 0.7814,
+      "prob_touch_nearest_be": 0.4125,
+      "nearest_breakeven": 94.2954,
+      "greeks": {
+        "delta": 15.2256,
+        "gamma": -2.3805,
+        "theta": 1.8635,
+        "vega": -4.8913,
+        "rho": 1.3093
+      }
+    },
+    {
+      "name": "iron_condor",
+      "spot": 100.0,
+      "horizon_days": 30.0,
+      "underlying_iv": 0.25,
+      "max_profit": 151.89,
+      "max_loss": -348.11,
+      "max_profit_unbounded": false,
+      "max_loss_unbounded": false,
+      "roc": 0.4363,
+      "pop": 0.6372,
+      "p50": 0.5788,
+      "prob_touch_nearest_be": 0.3469,
+      "nearest_breakeven": 93.4811,
+      "greeks": {
+        "delta": -1.6322,
+        "gamma": -4.478,
+        "theta": 3.8351,
+        "vega": -9.2013,
+        "rho": -0.0093
+      }
+    },
+    {
+      "name": "debit_call_vertical",
+      "spot": 100.0,
+      "horizon_days": 30.0,
+      "underlying_iv": 0.25,
+      "max_profit": 314.66,
+      "max_loss": null,
+      "max_profit_unbounded": false,
+      "max_loss_unbounded": true,
+      "roc": null,
+      "pop": 0.4029,
+      "p50": 0.3227,
+      "prob_touch_nearest_be": 0.7978,
+      "nearest_breakeven": 101.8534,
+      "greeks": {
+        "delta": 25.7983,
+        "gamma": 0.8957,
+        "theta": -1.0292,
+        "vega": 1.8404,
+        "rho": 1.9681
+      }
+    },
+    {
+      "name": "covered_call",
+      "spot": 100.0,
+      "horizon_days": 30.0,
+      "underlying_iv": 0.25,
+      "max_profit": 616.77,
+      "max_loss": null,
+      "max_profit_unbounded": false,
+      "max_loss_unbounded": true,
+      "roc": null,
+      "pop": 0.5693,
+      "p50": 0.3995,
+      "prob_touch_nearest_be": 0.8698,
+      "nearest_breakeven": 98.8323,
+      "greeks": {
+        "delta": 72.5423,
+        "gamma": -4.652,
+        "theta": 4.271,
+        "vega": -9.5588,
+        "rho": -2.1608
+      }
+    }
+  ]
+}
