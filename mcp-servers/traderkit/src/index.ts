@@ -67,6 +67,7 @@ import { LlmCouncilArgs, llmCouncilHandler } from "./tools/llm-council.js";
 import { FredSeriesArgs, fredSeriesHandler } from "./tools/fred-series.js";
 import { AvQuoteArgs, avQuoteHandler } from "./tools/av-quote.js";
 import { CheckAiBottLayerArgs, checkAiBottLayerHandler } from "./tools/check-ai-bott-layer.js";
+import { WorldmonitorSignalsArgs, worldmonitorSignalsHandler } from "./tools/worldmonitor-signals.js";
 import {
   UwDarkpoolArgs, uwDarkpoolHandler,
   UwFlowArgs, uwFlowHandler,
@@ -123,6 +124,8 @@ const TOOLS = [
     inputSchema: toolInput(CheckConcentrationArgs, ["profile", "positions", "portfolio_total_usd"]) },
   { name: "check_ai_bott_layer", description: "Analyze portfolio exposure across AI-Bottlenecks physical chokepoint layers (I-XV). Source: vault watchlist wiki/trading/watchlists/ai-bottlenecks.md (114 tickers across 15 layers). Default cap 4% NAV per layer. Returns per-layer HEADROOM/NEAR-CAP/AT-CAP/OVER-CAP labels — catches cross-name macro-driver concentration that single-name check_concentration misses (e.g. INTC+AMD+NVDA all under Layer V).",
     inputSchema: toolInput(CheckAiBottLayerArgs, ["positions", "portfolio_total_usd"]) },
+  { name: "worldmonitor_signals", description: "Read WorldMonitor readings (energy disruptions, chokepoints, gas storage, trade barriers, macro/stress composites, energy prices) from the vault ledger wiki/trading/worldmonitor-signals.md — never calls worldmonitor.sibt.ai itself; trade-refresh's puller owns the fetch so every figure keeps one freshness story. Last row per signal; usable only when status ok and pulled inside the 6h bound, otherwise flagged with the reason. Context for regime work, never an order trigger.",
+    inputSchema: toolInput(WorldmonitorSignalsArgs, []) },
   { name: "regime_gate", description: "Check if a trade is allowed under the current market regime. Returns adjusted sizing, blocked actions, and preferred structures.",
     inputSchema: toolInput(RegimeGateArgs, ["regime_tier", "direction", "notional_usd"]) },
   { name: "propose_trade", description: "Assemble a sized trade proposal with concentration headroom, regime adjustment, and cap check.",
@@ -296,6 +299,7 @@ async function main() {
         case "scan_tlh":        result = await scanTlhHandler(req.params.arguments, deps); break;
         case "check_concentration": result = await checkConcentrationHandler(req.params.arguments, deps); break;
         case "check_ai_bott_layer": result = await checkAiBottLayerHandler(req.params.arguments); break;
+        case "worldmonitor_signals": result = await worldmonitorSignalsHandler(req.params.arguments); break;
         case "regime_gate":     result = await regimeGateHandler(req.params.arguments); break;
         case "propose_trade":  result = await proposeTradeHandler(req.params.arguments, deps); break;
         case "track_tax":      result = await trackTaxHandler(req.params.arguments); break;
