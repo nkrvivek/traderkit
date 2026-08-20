@@ -55,10 +55,11 @@ async function uwGet(path: string, params: Record<string, string | number | unde
         "User-Agent": "traderkit/0.5 (+https://github.com/nkrvivek/traderkit)",
       },
     });
-    // Count before any status check. The request left the machine and UW has
-    // charged for it whatever it answered, and the loop below issues another
-    // one per retry.
-    uwSpend.record(path, res.status === 429);
+    // Count every answered request, and let the counter decide from the status
+    // whether UW charged for it. Only a 200 is charged (UW's own cap message
+    // says so); a refusal is recorded as an attempt, because a retry storm is
+    // worth seeing even though it is not spend.
+    uwSpend.record(path, res.status);
     const body = await res.text();
     if (!res.ok) {
       if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts - 1) {

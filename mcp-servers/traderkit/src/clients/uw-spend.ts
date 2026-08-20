@@ -31,6 +31,7 @@ interface Total {
   day: string;
   pid: number;
   calls: number;
+  refused: number;
   by_path: Record<string, number>;
   limit_hit: boolean;
   updated?: string;
@@ -71,6 +72,7 @@ function fresh(day: string): Total {
     day,
     pid: process.pid,
     calls: 0,
+    refused: 0,
     by_path: {},
     limit_hit: false,
   };
@@ -92,23 +94,38 @@ function flush(total: Total): void {
 }
 
 /**
- * Add one request to this process's running total.
+ * Add one answered request to this process's running total.
  *
- * Call this for every request that left the machine, including the ones that
- * came back 429 or 500. A refused request has already been counted by UW, and
- * the retry loop issues a fresh one per attempt, so counting only successes
- * would understate the day in the one direction a shared cap must not be wrong
- * in.
+ * `status` is what UW answered, and it decides whether the request was charged.
+ * UW's own cap message says so in as many words: "Only requests with a 200
+ * status code count toward your limit. 4XX and 5XX responses do not." An
+ * earlier version of this counter charged every attempt, on the reasoning that
+ * a refusal had still left the machine. That reasoning is wrong about this API,
+ * and it fails hardest at the moment the number is read hardest: once the token
+ * caps, every retry answers 429 and a counter that charges them walks past
+ * 80,000 while UW's own counter does not move.
+ *
+ * A refusal is recorded rather than dropped, because a retry storm is a finding
+ * even though it is not spend. `by_path` maps only what was charged, since its
+ * job is to say which endpoint spent the day.
+ *
+ * The whole 2xx band is charged, not the literal 200 UW names. Anything served
+ * that we cannot prove was free is treated as spend, because understating a
+ * shared cap is the one direction this must never be wrong in.
  */
-export function record(path: string, limitHit = false): void {
+export function record(path: string, status: number): void {
   const day = today();
   const prev = totals.get(day) ?? fresh(day);
+  const charged = status >= 200 && status < 300;
   const key = normalizePath(path);
   const next: Total = {
     ...prev,
-    calls: prev.calls + 1,
-    by_path: { ...prev.by_path, [key]: (prev.by_path[key] ?? 0) + 1 },
-    limit_hit: prev.limit_hit || limitHit,
+    calls: prev.calls + (charged ? 1 : 0),
+    refused: prev.refused + (charged ? 0 : 1),
+    by_path: charged
+      ? { ...prev.by_path, [key]: (prev.by_path[key] ?? 0) + 1 }
+      : prev.by_path,
+    limit_hit: prev.limit_hit || status === 429,
     updated: new Date().toISOString(),
   };
   totals.set(day, next);

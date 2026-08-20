@@ -45,7 +45,7 @@ describe("uw-client spend accounting", () => {
     expect(row()?.calls).toBe(1);
   });
 
-  it("records every attempt of a retried 429, not just the last", async () => {
+  it("records every attempt of a retried 429 without charging any of them", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("rate limited", { status: 429 })),
@@ -53,8 +53,11 @@ describe("uw-client spend accounting", () => {
     const c = await import("../../src/clients/uw-client.js");
     await c.uwDarkpoolRecentRaw(10);
     const r = row();
-    // uwGet attempts three times; UW charged for all three.
-    expect(r?.calls).toBe(3);
+    // uwGet attempts three times. UW charged for none of them, and a counter
+    // that charged all three would climb fastest once the ration was already
+    // gone, which is when it is read hardest.
+    expect(r?.calls).toBe(0);
+    expect(r?.refused).toBe(3);
     expect(r?.limit_hit).toBe(true);
   });
 
