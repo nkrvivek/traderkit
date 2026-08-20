@@ -1,4 +1,5 @@
 import { toMessage } from "../utils/errors.js";
+import * as uwSpend from "./uw-spend.js";
 
 const UW_BASE = process.env.UW_BASE ?? "https://api.unusualwhales.com/api";
 
@@ -32,6 +33,10 @@ function sanitizeBody(body: string, token: string): string {
   return stripped.replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]").slice(0, 200);
 }
 
+// A session that holds the token and calls nothing must read as measured
+// zero, not as a consumer whose counter was never installed.
+uwSpend.touch();
+
 async function uwGet(path: string, params: Record<string, string | number | undefined>): Promise<unknown> {
   const token = process.env.UW_TOKEN;
   if (!token) throw new Error("UW_TOKEN not set");
@@ -50,6 +55,10 @@ async function uwGet(path: string, params: Record<string, string | number | unde
         "User-Agent": "traderkit/0.5 (+https://github.com/nkrvivek/traderkit)",
       },
     });
+    // Count before any status check. The request left the machine and UW has
+    // charged for it whatever it answered, and the loop below issues another
+    // one per retry.
+    uwSpend.record(path, res.status === 429);
     const body = await res.text();
     if (!res.ok) {
       if ((res.status === 429 || res.status >= 500) && attempt < maxAttempts - 1) {
