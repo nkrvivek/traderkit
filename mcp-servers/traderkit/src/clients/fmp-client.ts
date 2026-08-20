@@ -1,6 +1,12 @@
 import { toMessage } from "../utils/errors.js";
+import * as fmpSpend from "./fmp-spend.js";
 
 const FMP_BASE = process.env.FMP_BASE ?? "https://financialmodelingprep.com/stable";
+
+// A zero row at load separates "this process ran and spent nothing" from "this
+// consumer has no counter at all". Without it every quiet day reads as a
+// finding, and a rail that is never clean stops being read.
+fmpSpend.touch();
 
 export interface FmpQuote {
   ticker: string;
@@ -58,6 +64,10 @@ async function fmpGet(path: string, params: Record<string, string>): Promise<unk
     // Network/TLS/DNS errors: Node may include the URL (w/ apikey) in the message.
     throw new Error(`FMP fetch ${path}: ${sanitizeBody(toMessage(e), key)}`);
   }
+  // Weighed before the status checks. A 402 and a 429 both cost bandwidth, and
+  // a counter that only counted the calls that worked would understate the
+  // exact days the shared key was in trouble.
+  fmpSpend.record(fmpSpend.responseBytes(res), res.status === 429);
   if (res.status === 402) {
     throw new Error(`FMP 402 ${path}: restricted — upgrade tier`);
   }

@@ -3,6 +3,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["test/**/*.test.ts"],
+    setupFiles: ["./test/setup-fmp-spend.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
