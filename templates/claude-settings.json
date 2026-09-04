@@ -6,10 +6,24 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__snaptrade-trade__equity_force_place|mcp__snaptrade-trade__equity_confirm|mcp__snaptrade-trade__mleg_place|mcp__snaptrade-trade__cancel_order",
+        "matcher": "mcp__snaptrade-trade__equity_force_place|mcp__snaptrade-trade__equity_confirm|mcp__snaptrade-trade__mleg_place|mcp__snaptrade-trade__cancel_order|mcp__tradestation__place_order|mcp__tradestation__cancel_order|mcp__tradestation__replace_order",
         "command": "node ${HOME}/.traderkit/scripts/pre-tool-use.js",
-        "description": "Enforce traderkit risk gates"
+        "description": "Enforce traderkit risk gates on every broker write path (SnapTrade + TradeStation)"
       }
     ]
-  }
+  },
+  "_comment": [
+    "TradeStation was added to the matcher 2026-09-03. Until then docs/tradestation.md",
+    "told the reader to add mcp__tradestation__place_order by hand, so a broker with a",
+    "live order path sat outside the risk gates by default and only a reader who found",
+    "that one line would have known. A gate that has to be installed by hand on the",
+    "most dangerous tool is not a default.",
+    "Verbs come from broker_tradestation.py in autopilot-experiment: place_order,",
+    "cancel_order, replace_order. Impact/dry-run tools (equity_impact, mleg_impact)",
+    "are deliberately NOT matched: they place nothing, and gating them would train",
+    "the operator to click through the gate.",
+    "Adding a tool name that does not exist costs nothing (it never matches).",
+    "Omitting one that does costs an ungated real-money order, so this list errs",
+    "toward covering more."
+  ]
 }
